@@ -1,0 +1,15 @@
+[2025-11-16T20:48:51.352+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:48:39.714589+00:00 [queued]>
+[2025-11-16T20:48:51.364+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:48:39.714589+00:00 [queued]>
+[2025-11-16T20:48:51.366+0000] {taskinstance.py:2170} INFO - Starting attempt 1 of 4
+[2025-11-16T20:48:51.384+0000] {taskinstance.py:2191} INFO - Executing <Task(PythonOperator): load_data> on 2025-11-16 20:48:39.714589+00:00
+[2025-11-16T20:48:51.394+0000] {standard_task_runner.py:60} INFO - Started process 572 to run task
+[2025-11-16T20:48:51.398+0000] {standard_task_runner.py:87} INFO - Running: ['***', 'tasks', 'run', 'dataset_analysis_dag', 'load_data', 'manual__2025-11-16T20:48:39.714589+00:00', '--job-id', '13', '--raw', '--subdir', 'DAGS_FOLDER/dataset_analysis_dag.py', '--cfg-path', '/tmp/tmplgvwz64m']
+[2025-11-16T20:48:51.400+0000] {standard_task_runner.py:88} INFO - Job 13: Subtask load_data
+[2025-11-16T20:48:51.476+0000] {task_command.py:423} INFO - Running <TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:48:39.714589+00:00 [running]> on host bf501a25d773
+[2025-11-16T20:48:51.617+0000] {taskinstance.py:2480} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='Marin_Botina' AIRFLOW_CTX_DAG_ID='dataset_analysis_dag' AIRFLOW_CTX_TASK_ID='load_data' AIRFLOW_CTX_EXECUTION_DATE='2025-11-16T20:48:39.714589+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-11-16T20:48:39.714589+00:00'
+[2025-11-16T20:49:14.821+0000] {logging_mixin.py:188} INFO - Loaded 50 categories, 112011 product categories, 1108987 transactions
+[2025-11-16T20:49:14.886+0000] {logging_mixin.py:188} INFO - Data saved to /opt/***/data
+[2025-11-16T20:49:15.133+0000] {python.py:201} INFO - Done. Returned value was: None
+[2025-11-16T20:49:15.167+0000] {taskinstance.py:1138} INFO - Marking task as SUCCESS. dag_id=dataset_analysis_dag, task_id=load_data, execution_date=20251116T204839, start_date=20251116T204851, end_date=20251116T204915
+[2025-11-16T20:49:15.245+0000] {local_task_job_runner.py:234} INFO - Task exited with return code 0
+[2025-11-16T20:49:15.356+0000] {taskinstance.py:3280} INFO - 1 downstream tasks scheduled from follow-on schedule check

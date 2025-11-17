@@ -1,0 +1,11 @@
+[2025-11-16T20:31:27.139+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:29:13.380976+00:00 [queued]>
+[2025-11-16T20:31:27.154+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:29:13.380976+00:00 [queued]>
+[2025-11-16T20:31:27.155+0000] {taskinstance.py:2170} INFO - Starting attempt 3 of 4
+[2025-11-16T20:31:27.179+0000] {taskinstance.py:2191} INFO - Executing <Task(PythonOperator): load_data> on 2025-11-16 20:29:13.380976+00:00
+[2025-11-16T20:31:27.190+0000] {standard_task_runner.py:60} INFO - Started process 882 to run task
+[2025-11-16T20:31:27.196+0000] {standard_task_runner.py:87} INFO - Running: ['***', 'tasks', 'run', 'dataset_analysis_dag', 'load_data', 'manual__2025-11-16T20:29:13.380976+00:00', '--job-id', '5', '--raw', '--subdir', 'DAGS_FOLDER/dataset_analysis_dag.py', '--cfg-path', '/tmp/tmph_ivq2wg']
+[2025-11-16T20:31:27.198+0000] {standard_task_runner.py:88} INFO - Job 5: Subtask load_data
+[2025-11-16T20:31:27.280+0000] {task_command.py:423} INFO - Running <TaskInstance: dataset_analysis_dag.load_data manual__2025-11-16T20:29:13.380976+00:00 [running]> on host c93439d3ffc6
+[2025-11-16T20:31:27.418+0000] {taskinstance.py:2480} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='Marin_Botina' AIRFLOW_CTX_DAG_ID='dataset_analysis_dag' AIRFLOW_CTX_TASK_ID='load_data' AIRFLOW_CTX_EXECUTION_DATE='2025-11-16T20:29:13.380976+00:00' AIRFLOW_CTX_TRY_NUMBER='3' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-11-16T20:29:13.380976+00:00'
+[2025-11-16T20:31:34.550+0000] {local_task_job_runner.py:234} INFO - Task exited with return code -9
+[2025-11-16T20:31:34.797+0000] {taskinstance.py:3280} INFO - 0 downstream tasks scheduled from follow-on schedule check
