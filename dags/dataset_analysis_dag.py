@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 from collections import defaultdict, Counter
 import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import seaborn as sns
 
 DATA_DIR = "/opt/airflow/data"
 DATASET_DIR = "/opt/airflow/dataset"
@@ -270,10 +273,13 @@ def temporal_analysis(**context):
 
 def customer_analysis(**context):
     """
-    Analiza patrones de comportamiento de clientes.
+    Analiza patrones de comportamiento de clientes y realiza clustering con K-Means.
     """
     transactions_json = context['ti'].xcom_pull(key='transactions_df')
+    product_category_json = context['ti'].xcom_pull(key='product_category_df')
+    
     transactions_df = pd.read_json(transactions_json)
+    product_category_df = pd.read_json(product_category_json)
     
     transactions_df['date'] = pd.to_datetime(transactions_df['date'])
     transactions_df['num_products'] = transactions_df['products'].str.split().str.len()
@@ -308,29 +314,106 @@ def customer_analysis(**context):
     else:
         customer_results['time_between_purchases'] = None
     
-    # Segmentación de clientes basada en frecuencia y valor
-    customer_stats = transactions_df.groupby('customer').agg({
-        'date': 'count',
-        'num_products': 'sum'
-    }).rename(columns={'date': 'num_purchases', 'num_products': 'total_products'})
+    # === CLUSTERING K-MEANS ===
+    # Preparar características para clustering
     
-    # Calcular cuartiles para segmentación
-    freq_q75 = customer_stats['num_purchases'].quantile(0.75)
-    value_q75 = customer_stats['total_products'].quantile(0.75)
+    # 1. Frecuencia: número de transacciones por cliente
+    customer_features = transactions_df.groupby('customer').agg({
+        'date': 'count',  # Frecuencia
+        'num_products': 'sum'  # Volumen total
+    }).rename(columns={'date': 'frequency', 'num_products': 'total_volume'})
     
-    def segment_customer(row):
-        if row['num_purchases'] >= freq_q75 and row['total_products'] >= value_q75:
-            return 'High Value'
-        elif row['num_purchases'] >= freq_q75:
-            return 'Frequent'
-        elif row['total_products'] >= value_q75:
-            return 'Big Spender'
+    # 2. Número de productos distintos por cliente
+    customer_distinct_products = []
+    for customer in customer_features.index:
+        customer_trans = transactions_df[transactions_df['customer'] == customer]
+        all_products = set()
+        for products_str in customer_trans['products']:
+            all_products.update(products_str.split())
+        customer_distinct_products.append(len(all_products))
+    
+    customer_features['distinct_products'] = customer_distinct_products
+    
+    # 3. Diversidad de categorías (número de categorías distintas compradas)
+    # Crear mapeo producto -> categoría
+    product_to_category = product_category_df.set_index('product_code')['category_id'].to_dict()
+    
+    customer_category_diversity = []
+    for customer in customer_features.index:
+        customer_trans = transactions_df[transactions_df['customer'] == customer]
+        all_categories = set()
+        for products_str in customer_trans['products']:
+            for product in products_str.split():
+                if product in product_to_category:
+                    all_categories.add(product_to_category[product])
+        customer_category_diversity.append(len(all_categories))
+    
+    customer_features['category_diversity'] = customer_category_diversity
+    
+    # Normalizar características para K-Means
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(customer_features)
+    
+    # Aplicar K-Means con 4 clusters
+    n_clusters = 4
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    customer_features['cluster'] = kmeans.fit_predict(features_scaled)
+    
+    # Analizar características de cada cluster
+    cluster_profiles = customer_features.groupby('cluster').agg({
+        'frequency': ['mean', 'median'],
+        'total_volume': ['mean', 'median'],
+        'distinct_products': ['mean', 'median'],
+        'category_diversity': ['mean', 'median']
+    }).round(2)
+    
+    cluster_sizes = customer_features['cluster'].value_counts().sort_index()
+    
+    # Asignar nombres descriptivos a los clusters basados en sus características
+    cluster_names = {}
+    cluster_descriptions = {}
+    
+    for cluster_id in range(n_clusters):
+        cluster_data = customer_features[customer_features['cluster'] == cluster_id]
+        avg_freq = cluster_data['frequency'].mean()
+        avg_volume = cluster_data['total_volume'].mean()
+        avg_distinct = cluster_data['distinct_products'].mean()
+        
+        # Lógica para nombrar clusters
+        if avg_freq > customer_features['frequency'].quantile(0.75):
+            if avg_volume > customer_features['total_volume'].quantile(0.75):
+                cluster_names[cluster_id] = 'VIP - Alto Valor'
+                cluster_descriptions[cluster_id] = 'Clientes frecuentes con alto volumen de compra'
+            else:
+                cluster_names[cluster_id] = 'Frecuentes'
+                cluster_descriptions[cluster_id] = 'Clientes que compran frecuentemente pero en pequeñas cantidades'
+        elif avg_volume > customer_features['total_volume'].quantile(0.75):
+            cluster_names[cluster_id] = 'Gran Comprador'
+            cluster_descriptions[cluster_id] = 'Clientes que compran en grandes volúmenes pero con baja frecuencia'
         else:
-            return 'Regular'
+            cluster_names[cluster_id] = 'Ocasional'
+            cluster_descriptions[cluster_id] = 'Clientes con baja frecuencia y volumen moderado'
     
-    customer_stats['segment'] = customer_stats.apply(segment_customer, axis=1)
-    segment_counts = customer_stats['segment'].value_counts()
-    customer_results['segmentation'] = segment_counts.to_dict()
+    # Guardar resultados de clustering
+    customer_results['clustering'] = {
+        'n_clusters': n_clusters,
+        'cluster_sizes': {cluster_names[k]: int(v) for k, v in cluster_sizes.items()},
+        'cluster_profiles': {
+            cluster_names[cluster_id]: {
+                'size': int(cluster_sizes[cluster_id]),
+                'description': cluster_descriptions[cluster_id],
+                'avg_frequency': float(cluster_profiles.loc[cluster_id, ('frequency', 'mean')]),
+                'avg_total_volume': float(cluster_profiles.loc[cluster_id, ('total_volume', 'mean')]),
+                'avg_distinct_products': float(cluster_profiles.loc[cluster_id, ('distinct_products', 'mean')]),
+                'avg_category_diversity': float(cluster_profiles.loc[cluster_id, ('category_diversity', 'mean')])
+            }
+            for cluster_id in range(n_clusters)
+        }
+    }
+    
+    # Guardar también el DataFrame con clusters para visualización
+    customer_features['cluster_name'] = customer_features['cluster'].map(cluster_names)
+    customer_results['customer_clusters_df'] = customer_features.to_json()
     
     print("\n=== ANÁLISIS DE CLIENTES ===")
     print(f"\nFrecuencia de compra:")
@@ -343,11 +426,173 @@ def customer_analysis(**context):
         print(f"Promedio: {customer_results['time_between_purchases']['mean_days']:.2f} días")
         print(f"Mediana: {customer_results['time_between_purchases']['median_days']:.2f} días")
     
-    print(f"\nSegmentación de clientes:")
-    for segment, count in segment_counts.items():
-        print(f"{segment}: {count} clientes")
+    print(f"\n=== CLUSTERING K-MEANS ===")
+    print(f"Número de clusters: {n_clusters}")
+    for cluster_name, profile in customer_results['clustering']['cluster_profiles'].items():
+        print(f"\n{cluster_name} (n={profile['size']}):")
+        print(f"  {profile['description']}")
+        print(f"  Frecuencia promedio: {profile['avg_frequency']:.2f}")
+        print(f"  Volumen total promedio: {profile['avg_total_volume']:.2f}")
+        print(f"  Productos distintos promedio: {profile['avg_distinct_products']:.2f}")
+        print(f"  Diversidad de categorías promedio: {profile['avg_category_diversity']:.2f}")
     
     context['ti'].xcom_push(key='customer_results', value=customer_results)
+
+
+def recommendation_system(**context):
+    """
+    Sistema de recomendación basado en reglas de asociación.
+    """
+    transactions_json = context['ti'].xcom_pull(key='transactions_df')
+    association_results = context['ti'].xcom_pull(key='association_results')
+    
+    transactions_df = pd.read_json(transactions_json)
+    
+    recommendation_results = {}
+    
+    # Crear estructura de reglas para búsqueda rápida
+    # Diccionario: producto -> lista de productos recomendados con sus métricas
+    product_recommendations = defaultdict(list)
+    
+    for rule in association_results['top_rules']:
+        antecedent = rule['antecedent']
+        consequent = rule['consequent']
+        product_recommendations[antecedent].append({
+            'product': consequent,
+            'confidence': rule['confidence'],
+            'lift': rule['lift'],
+            'support': rule['support']
+        })
+    
+    # Ordenar recomendaciones por lift
+    for product in product_recommendations:
+        product_recommendations[product] = sorted(
+            product_recommendations[product], 
+            key=lambda x: x['lift'], 
+            reverse=True
+        )
+    
+    # Función 1: Recomendar para un cliente específico
+    def recommend_for_customer(customer_id, top_n=5):
+        """
+        Dado un cliente, recomendar productos basados en su historial.
+        """
+        # Obtener productos que el cliente ya compró
+        customer_trans = transactions_df[transactions_df['customer'] == customer_id]
+        if customer_trans.empty:
+            return []
+        
+        customer_products = set()
+        for products_str in customer_trans['products']:
+            customer_products.update(products_str.split())
+        
+        # Buscar recomendaciones basadas en productos comprados
+        recommendations_dict = {}
+        for product in customer_products:
+            if product in product_recommendations:
+                for rec in product_recommendations[product]:
+                    rec_product = rec['product']
+                    # No recomendar productos que ya compró
+                    if rec_product not in customer_products:
+                        if rec_product not in recommendations_dict:
+                            recommendations_dict[rec_product] = {
+                                'score': 0,
+                                'count': 0,
+                                'avg_confidence': 0,
+                                'avg_lift': 0
+                            }
+                        recommendations_dict[rec_product]['score'] += rec['lift']
+                        recommendations_dict[rec_product]['count'] += 1
+                        recommendations_dict[rec_product]['avg_confidence'] += rec['confidence']
+                        recommendations_dict[rec_product]['avg_lift'] += rec['lift']
+        
+        # Promediar métricas
+        for prod in recommendations_dict:
+            count = recommendations_dict[prod]['count']
+            recommendations_dict[prod]['avg_confidence'] /= count
+            recommendations_dict[prod]['avg_lift'] /= count
+        
+        # Ordenar por score y tomar top N
+        sorted_recs = sorted(
+            recommendations_dict.items(), 
+            key=lambda x: x[1]['score'], 
+            reverse=True
+        )[:top_n]
+        
+        return [(prod, data) for prod, data in sorted_recs]
+    
+    # Función 2: Recomendar para un producto específico
+    def recommend_for_product(product_id, top_n=5):
+        """
+        Dado un producto, recomendar productos que suelen comprarse juntos.
+        """
+        if product_id not in product_recommendations:
+            return []
+        
+        recommendations = product_recommendations[product_id][:top_n]
+        return [(rec['product'], rec) for rec in recommendations]
+    
+    # Ejemplo: Generar recomendaciones para los top 10 clientes más frecuentes
+    customer_freq = transactions_df.groupby('customer').size().sort_values(ascending=False)
+    top_customers = customer_freq.head(10).index.tolist()
+    
+    customer_recommendations_examples = {}
+    for customer in top_customers:
+        recs = recommend_for_customer(customer, top_n=5)
+        if recs:
+            customer_recommendations_examples[customer] = [
+                {
+                    'product': prod,
+                    'score': float(data['score']),
+                    'avg_confidence': float(data['avg_confidence']),
+                    'avg_lift': float(data['avg_lift'])
+                }
+                for prod, data in recs
+            ]
+    
+    recommendation_results['customer_recommendations_examples'] = customer_recommendations_examples
+    
+    # Ejemplo: Generar recomendaciones para los top 10 productos más vendidos
+    all_products = []
+    for products in transactions_df['products']:
+        all_products.extend(products.split())
+    product_counts = Counter(all_products)
+    top_products = [prod for prod, count in product_counts.most_common(20)]
+    
+    product_recommendations_examples = {}
+    for product in top_products:
+        recs = recommend_for_product(product, top_n=5)
+        if recs:
+            product_recommendations_examples[product] = [
+                {
+                    'product': rec_prod,
+                    'confidence': float(data['confidence']),
+                    'lift': float(data['lift']),
+                    'support': float(data['support'])
+                }
+                for rec_prod, data in recs
+            ]
+    
+    recommendation_results['product_recommendations_examples'] = product_recommendations_examples
+    
+    print("\n=== SISTEMA DE RECOMENDACIÓN ===")
+    print(f"\nRecomendaciones generadas para {len(customer_recommendations_examples)} clientes")
+    print(f"Recomendaciones generadas para {len(product_recommendations_examples)} productos")
+    
+    # Mostrar algunos ejemplos
+    print("\nEjemplo de recomendaciones para clientes:")
+    for i, (customer, recs) in enumerate(list(customer_recommendations_examples.items())[:3], 1):
+        print(f"\n  Cliente {customer}:")
+        for rec in recs[:3]:
+            print(f"    - Producto {rec['product']} (Score: {rec['score']:.2f}, Lift: {rec['avg_lift']:.2f})")
+    
+    print("\nEjemplo de recomendaciones para productos:")
+    for i, (product, recs) in enumerate(list(product_recommendations_examples.items())[:3], 1):
+        print(f"\n  Producto {product}:")
+        for rec in recs[:3]:
+            print(f"    - Producto {rec['product']} (Lift: {rec['lift']:.2f}, Confidence: {rec['confidence']:.2f})")
+    
+    context['ti'].xcom_push(key='recommendation_results', value=recommendation_results)
 
 
 def product_association_analysis(**context):
@@ -568,16 +813,39 @@ def generate_plots(**context):
     
     # Nuevas gráficas de análisis de clientes
     
-    # 8. Segmentación de clientes
-    segment_df = pd.Series(customer_results['segmentation'])
-    plt.figure(figsize=(10, 6))
-    colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
-    plt.pie(segment_df.values, labels=segment_df.index, autopct='%1.1f%%', 
-            colors=colors, startangle=90)
-    plt.title('Segmentacion de Clientes')
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULTS_DIR, 'customer_segmentation.png'))
-    plt.close()
+    # 8. Clustering K-Means de clientes
+    if 'clustering' in customer_results and 'cluster_sizes' in customer_results['clustering']:
+        cluster_sizes_df = pd.Series(customer_results['clustering']['cluster_sizes'])
+        plt.figure(figsize=(10, 6))
+        colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99']
+        plt.pie(cluster_sizes_df.values, labels=cluster_sizes_df.index, autopct='%1.1f%%', 
+                colors=colors, startangle=90)
+        plt.title('Clustering K-Means de Clientes')
+        plt.tight_layout()
+        plt.savefig(os.path.join(RESULTS_DIR, 'customer_clustering_kmeans.png'))
+        plt.close()
+        
+        # Visualización 3D del clustering (proyección 2D)
+        if 'customer_clusters_df' in customer_results:
+            customer_clusters_df = pd.read_json(customer_results['customer_clusters_df'])
+            plt.figure(figsize=(12, 8))
+            
+            # Scatter plot de frecuencia vs volumen total coloreado por cluster
+            scatter = plt.scatter(
+                customer_clusters_df['frequency'], 
+                customer_clusters_df['total_volume'],
+                c=customer_clusters_df['cluster'],
+                cmap='viridis',
+                alpha=0.6,
+                s=100
+            )
+            plt.xlabel('Frecuencia de Compra')
+            plt.ylabel('Volumen Total')
+            plt.title('Clustering K-Means: Frecuencia vs Volumen')
+            plt.colorbar(scatter, label='Cluster')
+            plt.tight_layout()
+            plt.savefig(os.path.join(RESULTS_DIR, 'customer_clustering_scatter.png'))
+            plt.close()
     
     # 9. Top reglas de asociación
     if association_results['top_rules']:
@@ -593,6 +861,135 @@ def generate_plots(**context):
         plt.tight_layout()
         plt.savefig(os.path.join(RESULTS_DIR, 'association_rules.png'))
         plt.close()
+    
+    # === NUEVAS VISUALIZACIONES ANALÍTICAS REQUERIDAS ===
+    
+    # 10. Top 10 Clientes (Resumen Ejecutivo)
+    customer_transaction_counts = transactions_df.groupby('customer').size().sort_values(ascending=False).head(10)
+    plt.figure(figsize=(10, 6))
+    customer_transaction_counts.plot(kind='barh', color='orange')
+    plt.title('Top 10 Clientes por Numero de Transacciones')
+    plt.xlabel('Numero de Transacciones')
+    plt.ylabel('Cliente ID')
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, 'top_10_customers.png'))
+    plt.close()
+    
+    # 11. Boxplot - Distribución de productos por cliente y por categoría
+    # Calcular productos por cliente
+    customer_product_counts = transactions_df.groupby('customer')['num_products'].sum()
+    
+    # Calcular productos por categoría
+    # Expandir productos y mapear a categorías
+    product_to_category = product_category_df.set_index('product_code')['category_id'].to_dict()
+    category_product_counts = []
+    
+    for products_str in transactions_df['products']:
+        for product in products_str.split():
+            if product in product_to_category:
+                category_product_counts.append(product_to_category[product])
+    
+    category_counts_series = pd.Series(category_product_counts).value_counts()
+    
+    # Crear figura con subplots
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # Boxplot 1: Distribución por cliente
+    axes[0].boxplot([customer_product_counts], labels=['Clientes'])
+    axes[0].set_ylabel('Total de Productos Comprados')
+    axes[0].set_title('Distribucion de Productos por Cliente')
+    axes[0].grid(axis='y', alpha=0.3)
+    
+    # Boxplot 2: Distribución por categoría (top 10 categorías)
+    top_categories = category_counts_series.head(10)
+    axes[1].barh(range(len(top_categories)), top_categories.values)
+    axes[1].set_yticks(range(len(top_categories)))
+    axes[1].set_yticklabels([f'Cat {cat}' for cat in top_categories.index])
+    axes[1].set_xlabel('Numero de Productos')
+    axes[1].set_title('Top 10 Categorias por Volumen')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, 'boxplot_distribution.png'))
+    plt.close()
+    
+    # 12. Heatmap - Correlación entre variables numéricas
+    # Crear DataFrame con variables numéricas por cliente
+    customer_features_list = []
+    
+    for customer in transactions_df['customer'].unique():
+        customer_trans = transactions_df[transactions_df['customer'] == customer]
+        
+        # Calcular métricas
+        frequency = len(customer_trans)
+        total_products = customer_trans['num_products'].sum()
+        avg_products_per_transaction = customer_trans['num_products'].mean()
+        
+        # Productos distintos
+        distinct_products = set()
+        for products_str in customer_trans['products']:
+            distinct_products.update(products_str.split())
+        
+        # Diversidad de categorías
+        categories_purchased = set()
+        for products_str in customer_trans['products']:
+            for product in products_str.split():
+                if product in product_to_category:
+                    categories_purchased.add(product_to_category[product])
+        
+        customer_features_list.append({
+            'Frecuencia': frequency,
+            'Volumen_Total': total_products,
+            'Promedio_Productos': avg_products_per_transaction,
+            'Productos_Distintos': len(distinct_products),
+            'Diversidad_Categorias': len(categories_purchased)
+        })
+    
+    features_df = pd.DataFrame(customer_features_list)
+    correlation_matrix = features_df.corr()
+    
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+                square=True, linewidths=1, cbar_kws={"shrink": 0.8})
+    plt.title('Heatmap de Correlacion entre Variables de Cliente')
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, 'correlation_heatmap.png'))
+    plt.close()
+    
+    # 13. Días pico de compra (agregado por día)
+    daily_transactions = transactions_df.groupby(transactions_df['date'].dt.date).size()
+    top_days = daily_transactions.sort_values(ascending=False).head(10)
+    
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(len(top_days)), top_days.values, color='purple', alpha=0.7)
+    plt.xticks(range(len(top_days)), [str(d) for d in top_days.index], rotation=45, ha='right')
+    plt.xlabel('Fecha')
+    plt.ylabel('Numero de Transacciones')
+    plt.title('Top 10 Dias Pico de Compra')
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, 'peak_days.png'))
+    plt.close()
+    
+    # 14. Categorías más "rentables" (por volumen/frecuencia relativa)
+    category_volume = defaultdict(int)
+    for products_str in transactions_df['products']:
+        for product in products_str.split():
+            if product in product_to_category:
+                category_volume[product_to_category[product]] += 1
+    
+    category_volume_series = pd.Series(category_volume).sort_values(ascending=False).head(10)
+    
+    # Mapear a nombres si están disponibles
+    category_id_to_name = categories_df.set_index('category_id')['category_name'].to_dict()
+    category_labels = [category_id_to_name.get(cat, f'Cat {cat}') for cat in category_volume_series.index]
+    
+    plt.figure(figsize=(12, 6))
+    plt.barh(range(len(category_volume_series)), category_volume_series.values, color='gold')
+    plt.yticks(range(len(category_volume_series)), category_labels)
+    plt.xlabel('Volumen Total (Frecuencia de Productos)')
+    plt.title('Top 10 Categorias por Volumen (Rentabilidad Relativa)')
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, 'categories_by_volume.png'))
+    plt.close()
     
     print("Plots generated and saved to files")
 
@@ -661,7 +1058,7 @@ def save_results(**context):
         for date, stats in daily_sales_sorted:
             f.write(f"{date}: {stats['num_transactions']} transacciones\n")
     
-    # Guardar análisis de clientes
+    # Guardar análisis de clientes (incluyendo clustering K-Means)
     with open(os.path.join(RESULTS_DIR, "customer_analysis.txt"), "w") as f:
         f.write("=== ANÁLISIS DE CLIENTES ===\n\n")
         
@@ -674,9 +1071,17 @@ def save_results(**context):
             for key, value in customer_results['time_between_purchases'].items():
                 f.write(f"{key}: {value}\n")
         
-        f.write("\nSegmentación de clientes:\n")
-        for segment, count in customer_results['segmentation'].items():
-            f.write(f"{segment}: {count} clientes\n")
+        if 'clustering' in customer_results:
+            f.write("\n=== CLUSTERING K-MEANS ===\n\n")
+            f.write(f"Número de clusters: {customer_results['clustering']['n_clusters']}\n\n")
+            
+            for cluster_name, profile in customer_results['clustering']['cluster_profiles'].items():
+                f.write(f"\n{cluster_name} (n={profile['size']}):\n")
+                f.write(f"  Descripción: {profile['description']}\n")
+                f.write(f"  Frecuencia promedio: {profile['avg_frequency']:.2f}\n")
+                f.write(f"  Volumen total promedio: {profile['avg_total_volume']:.2f}\n")
+                f.write(f"  Productos distintos promedio: {profile['avg_distinct_products']:.2f}\n")
+                f.write(f"  Diversidad de categorías promedio: {profile['avg_category_diversity']:.2f}\n")
     
     # Guardar análisis de asociación de productos
     with open(os.path.join(RESULTS_DIR, "product_association.txt"), "w") as f:
@@ -692,6 +1097,188 @@ def save_results(**context):
                    f"Support={rule['support']:.4f}, "
                    f"Confidence={rule['confidence']:.4f}, "
                    f"Lift={rule['lift']:.4f}\n")
+    
+    # Guardar sistema de recomendaciones
+    recommendation_results = context['ti'].xcom_pull(key='recommendation_results')
+    if recommendation_results:
+        with open(os.path.join(RESULTS_DIR, "recommendations.txt"), "w") as f:
+            f.write("=== SISTEMA DE RECOMENDACIÓN ===\n\n")
+            
+            f.write("RECOMENDACIONES PARA CLIENTES:\n\n")
+            for customer, recs in list(recommendation_results['customer_recommendations_examples'].items())[:10]:
+                f.write(f"\nCliente {customer}:\n")
+                for i, rec in enumerate(recs[:5], 1):
+                    f.write(f"  {i}. Producto {rec['product']} "
+                           f"(Score: {rec['score']:.2f}, Lift: {rec['avg_lift']:.2f})\n")
+            
+            f.write("\n\nRECOMENDACIONES PARA PRODUCTOS:\n\n")
+            for product, recs in list(recommendation_results['product_recommendations_examples'].items())[:10]:
+                f.write(f"\nProducto {product}:\n")
+                for i, rec in enumerate(recs[:5], 1):
+                    f.write(f"  {i}. Producto {rec['product']} "
+                           f"(Lift: {rec['lift']:.2f}, Confidence: {rec['confidence']:.2f})\n")
+    
+    # === INFORME EJECUTIVO CONSOLIDADO ===
+    transactions_json = context['ti'].xcom_pull(key='transactions_df')
+    transactions_df = pd.read_json(transactions_json)
+    transactions_df['num_products'] = transactions_df['products'].str.split().str.len()
+    
+    with open(os.path.join(RESULTS_DIR, "INFORME_EJECUTIVO.txt"), "w", encoding='utf-8') as f:
+        f.write("="*80 + "\n")
+        f.write(" "*20 + "INFORME EJECUTIVO\n")
+        f.write(" "*10 + "Análisis y Modelado Analítico de Transacciones\n")
+        f.write("="*80 + "\n\n")
+        
+        # RESUMEN EJECUTIVO
+        f.write("1. RESUMEN EJECUTIVO\n")
+        f.write("-" * 80 + "\n\n")
+        
+        total_ventas = transactions_df['num_products'].sum()
+        num_transacciones = len(transactions_df)
+        
+        f.write(f"Total de ventas (unidades): {total_ventas:,}\n")
+        f.write(f"Número de transacciones: {num_transacciones:,}\n")
+        f.write(f"Promedio de productos por transacción: {total_ventas/num_transacciones:.2f}\n")
+        f.write(f"Número de clientes únicos: {transactions_df['customer'].nunique():,}\n")
+        f.write(f"Número de tiendas: {transactions_df['store'].nunique()}\n\n")
+        
+        # Top 10 productos
+        f.write("Top 10 Productos Más Vendidos:\n")
+        for i, (prod, count) in enumerate(list(stats_results['product_frequencies'].items())[:10], 1):
+            f.write(f"  {i}. Producto {prod}: {count} ventas\n")
+        
+        # Top 10 clientes
+        f.write("\nTop 10 Clientes:\n")
+        top_customers = transactions_df.groupby('customer').size().sort_values(ascending=False).head(10)
+        for i, (customer, count) in enumerate(top_customers.items(), 1):
+            f.write(f"  {i}. Cliente {customer}: {count} transacciones\n")
+        
+        # Días pico
+        f.write("\nTop 5 Días Pico de Compra:\n")
+        daily_sales_sorted = sorted(temporal_results['daily_sales'].items(), 
+                                    key=lambda x: x[1]['num_transactions'], 
+                                    reverse=True)[:5]
+        for i, (date, stats) in enumerate(daily_sales_sorted, 1):
+            f.write(f"  {i}. {date}: {stats['num_transactions']} transacciones\n")
+        
+        # Categorías más rentables
+        f.write("\nTop 5 Categorías por Volumen:\n")
+        for i, (cat, count) in enumerate(list(stats_results['categorical']['category_counts'].items())[:5], 1):
+            freq = stats_results['categorical']['category_frequencies'][cat]
+            f.write(f"  {i}. Categoría {cat}: {count} productos ({freq}%)\n")
+        
+        # ANÁLISIS DESCRIPTIVO
+        f.write("\n\n2. ANÁLISIS DESCRIPTIVO\n")
+        f.write("-" * 80 + "\n\n")
+        
+        f.write("2.1 Análisis Temporal\n")
+        f.write("  - Tendencia: Se identificaron patrones de venta diarios y semanales.\n")
+        f.write(f"  - Promedio de transacciones diarias: {temporal_results['daily_stats']['mean_daily_transactions']:.2f}\n")
+        f.write(f"  - Día de la semana con más ventas: ")
+        day_sales = temporal_results['day_of_week_sales']
+        max_day = max(day_sales.items(), key=lambda x: x[1]['num_transactions'])
+        f.write(f"{max_day[0]} ({max_day[1]['num_transactions']} transacciones)\n")
+        
+        f.write("\n2.2 Análisis de Clientes\n")
+        f.write(f"  - Frecuencia promedio de compra: {customer_results['purchase_frequency']['mean']:.2f} transacciones\n")
+        if customer_results['time_between_purchases']:
+            f.write(f"  - Tiempo promedio entre compras: {customer_results['time_between_purchases']['mean_days']:.2f} días\n")
+        
+        # ANÁLISIS AVANZADO - CLUSTERING
+        f.write("\n\n3. ANÁLISIS AVANZADO: SEGMENTACIÓN DE CLIENTES (K-MEANS)\n")
+        f.write("-" * 80 + "\n\n")
+        
+        if 'clustering' in customer_results:
+            f.write("Se aplicó clustering K-Means con 4 grupos basados en:\n")
+            f.write("  - Frecuencia de compra\n")
+            f.write("  - Volumen total de productos\n")
+            f.write("  - Número de productos distintos\n")
+            f.write("  - Diversidad de categorías compradas\n\n")
+            
+            for cluster_name, profile in customer_results['clustering']['cluster_profiles'].items():
+                f.write(f"{cluster_name} ({profile['size']} clientes, {profile['size']/len(transactions_df['customer'].unique())*100:.1f}%):\n")
+                f.write(f"  {profile['description']}\n")
+                f.write(f"  - Frecuencia: {profile['avg_frequency']:.2f}\n")
+                f.write(f"  - Volumen: {profile['avg_total_volume']:.2f}\n")
+                f.write(f"  - Productos distintos: {profile['avg_distinct_products']:.2f}\n")
+                f.write(f"  - Diversidad de categorías: {profile['avg_category_diversity']:.2f}\n\n")
+        
+        # ANÁLISIS AVANZADO - RECOMENDACIONES
+        f.write("\n4. ANÁLISIS AVANZADO: SISTEMA DE RECOMENDACIÓN\n")
+        f.write("-" * 80 + "\n\n")
+        
+        f.write("Sistema basado en reglas de asociación (Market Basket Analysis):\n")
+        f.write(f"  - Items frecuentes identificados: {len(association_results['frequent_items'])}\n")
+        f.write(f"  - Reglas de asociación generadas: {len(association_results['top_rules'])}\n\n")
+        
+        f.write("Ejemplos de recomendaciones:\n")
+        if recommendation_results:
+            # Ejemplo de recomendación para cliente
+            if recommendation_results['customer_recommendations_examples']:
+                first_customer = list(recommendation_results['customer_recommendations_examples'].keys())[0]
+                recs = recommendation_results['customer_recommendations_examples'][first_customer]
+                f.write(f"\n  Cliente {first_customer}:\n")
+                for rec in recs[:3]:
+                    f.write(f"    → Producto {rec['product']} (relevancia: {rec['score']:.2f})\n")
+            
+            # Ejemplo de recomendación para producto
+            if recommendation_results['product_recommendations_examples']:
+                first_product = list(recommendation_results['product_recommendations_examples'].keys())[0]
+                recs = recommendation_results['product_recommendations_examples'][first_product]
+                f.write(f"\n  Producto {first_product}:\n")
+                for rec in recs[:3]:
+                    f.write(f"    → Producto {rec['product']} (lift: {rec['lift']:.2f})\n")
+        
+        # PRINCIPALES HALLAZGOS
+        f.write("\n\n5. PRINCIPALES HALLAZGOS\n")
+        f.write("-" * 80 + "\n\n")
+        
+        f.write("• Patrones temporales: Existen días específicos con mayor actividad de compra.\n")
+        f.write("• Segmentación clara: Se identificaron 4 grupos de clientes con comportamientos distintos.\n")
+        f.write("• Productos complementarios: Se detectaron productos que frecuentemente se compran juntos.\n")
+        f.write("• Oportunidades de cross-selling: El sistema de recomendación identifica productos relevantes.\n")
+        
+        # RECOMENDACIONES DE NEGOCIO
+        f.write("\n\n6. RECOMENDACIONES DE NEGOCIO\n")
+        f.write("-" * 80 + "\n\n")
+        
+        if 'clustering' in customer_results:
+            for cluster_name, profile in customer_results['clustering']['cluster_profiles'].items():
+                f.write(f"\n{cluster_name}:\n")
+                if 'VIP' in cluster_name or 'Alto Valor' in cluster_name:
+                    f.write("  - Implementar programa de lealtad premium\n")
+                    f.write("  - Ofrecer descuentos por volumen\n")
+                    f.write("  - Comunicación personalizada prioritaria\n")
+                elif 'Frecuente' in cluster_name:
+                    f.write("  - Incentivar aumento de ticket promedio\n")
+                    f.write("  - Promociones en categorías complementarias\n")
+                    f.write("  - Gamificación para aumentar engagement\n")
+                elif 'Gran Comprador' in cluster_name:
+                    f.write("  - Aumentar frecuencia con recordatorios\n")
+                    f.write("  - Facilitar proceso de recompra\n")
+                    f.write("  - Suscripción o pedidos recurrentes\n")
+                else:
+                    f.write("  - Campañas de reactivación\n")
+                    f.write("  - Ofertas de entrada atractivas\n")
+                    f.write("  - Comunicación menos frecuente pero relevante\n")
+        
+        f.write("\nEstrategias de merchandising:\n")
+        f.write("  - Colocar productos complementarios cercanos (según reglas de asociación)\n")
+        f.write("  - Implementar recomendaciones en punto de venta\n")
+        f.write("  - Diseñar combos basados en productos frecuentemente comprados juntos\n")
+        
+        f.write("\n\n7. CONCLUSIONES\n")
+        f.write("-" * 80 + "\n\n")
+        
+        f.write("El análisis reveló patrones significativos en el comportamiento de compra que pueden\n")
+        f.write("ser aprovechados para mejorar la estrategia comercial. La segmentación de clientes\n")
+        f.write("permite personalizar la experiencia y maximizar el valor de cada grupo. El sistema\n")
+        f.write("de recomendación basado en reglas de asociación ofrece oportunidades claras de\n")
+        f.write("cross-selling y up-selling.\n\n")
+        
+        f.write("="*80 + "\n")
+        f.write("Fin del informe\n")
+        f.write("="*80 + "\n")
     
     print("Results saved to files")
 
@@ -738,6 +1325,11 @@ with DAG(
         python_callable=product_association_analysis,
     )
 
+    t_recommendation = PythonOperator(
+        task_id="recommendation_system",
+        python_callable=recommendation_system,
+    )
+
     t_generate_plots = PythonOperator(
         task_id="generate_plots",
         python_callable=generate_plots,
@@ -748,6 +1340,8 @@ with DAG(
         python_callable=save_results,
     )
 
+    # Definir flujo de tareas
     t_load >> t_review >> t_stats
     t_stats >> [t_temporal, t_customer, t_association]
-    [t_temporal, t_customer, t_association] >> t_generate_plots >> t_save
+    t_association >> t_recommendation
+    [t_temporal, t_customer, t_recommendation] >> t_generate_plots >> t_save
