@@ -84,9 +84,35 @@ services:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
-      interval: 5s
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 10s
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "work_mem=2MB"
 
   redis:
     image: redis:latest
@@ -94,10 +120,20 @@ services:
       - 6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 30s
-      retries: 50
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+    command: redis-server --maxmemory 400mb --maxmemory-policy allkeys-lru
 
   airflow-webserver:
     <<: *airflow-common
@@ -106,10 +142,19 @@ services:
       - 8080:8080
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -122,12 +167,21 @@ services:
       test:
         [
           "CMD-SHELL",
-          'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"',
+          'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}" && test -f /opt/airflow/airflow-scheduler.pid',
         ]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -140,15 +194,24 @@ services:
       test:
         - "CMD-SHELL"
         - 'celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     environment:
       <<: *airflow-common-env
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -163,10 +226,19 @@ services:
           "CMD-SHELL",
           'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
         ]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1G
+        reservations:
+          cpus: "0.1"
+          memory: 256M
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:

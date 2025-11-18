@@ -7,7 +7,70 @@
 
 ## Descripción
 
-Este proyecto implementa un pipeline de análisis de datos en Apache Airflow, desplegado mediante Docker Compose. El objetivo es procesar un dataset de transacciones de un supermercado, realizar una revisión inicial de la estructura de los datos y calcular estadísticas descriptivas.
+Este proyecto implementa una solución tecnológica integral para analizar y visualizar el comportamiento de transacciones de un supermercado mediante Apache Airflow. La solución genera valor a partir de los datos disponibles mediante analítica descriptiva, diagnóstica y predictiva, cumpliendo con todos los requisitos del enunciado del proyecto.
+
+## Cumplimiento del Enunciado
+
+### Resumen Ejecutivo Implementado
+
+| Indicador requerido      | Implementación                       | Archivo de salida                   |
+| ------------------------ | ------------------------------------ | ----------------------------------- |
+| Total de ventas          | Suma total de productos vendidos     | `results/data_review.txt`           |
+| Número de transacciones  | 1,108,987 transacciones              | `results/data_review.txt`           |
+| Top 10 productos         | Productos más comprados por volumen  | `results/top_products.png`          |
+| Top 10 clientes          | Clientes con mayor volumen de compra | `results/top10_customers.png`       |
+| Días pico de compra      | Días con mayor actividad             | `results/peak_days.png`             |
+| Categorías más rentables | Categorías ordenadas por volumen     | `results/top_categories_volume.png` |
+
+### Visualizaciones Analíticas Implementadas
+
+| Tipo requerido  | Implementación                        | Archivo generado                                                             |
+| --------------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| Serie de tiempo | Ventas diarias, semanales y mensuales | `results/daily_sales_timeseries.png`, `results/monthly_sales.png`            |
+| Boxplot         | Distribución por cliente y categoría  | `results/boxplot_distribution.png`, `results/customer_clustering_kmeans.png` |
+| Heatmap         | Correlación entre métricas de cliente | `results/correlation_heatmap.png`                                            |
+
+### Análisis Avanzado Implementado
+
+#### A. Segmentación de Clientes (K-Means)
+
+- **Algoritmo**: K-Means clustering con 4 segmentos
+- **Variables**: Frecuencia, volumen total, productos distintos, diversidad de categorías, días activo, compras por día
+- **Normalización**: StandardScaler para todas las variables
+- **Visualizaciones**: `results/customer_clustering_kmeans.png`, `results/customer_clustering_scatter.png`
+- **Interpretación**: Archivo `results/customer_analysis.txt` con descripción de cada segmento
+
+#### B. Recomendador de Productos
+
+- **Técnica**: Reglas de asociación con algoritmo Apriori
+- **Funcionalidades**:
+  - Dado un cliente: Sugerir productos complementarios basados en su historial
+  - Dado un producto: "Clientes que compraron X también compraron Y"
+- **Métricas**: Soporte, confianza y lift para cada regla
+- **Visualización**: `results/association_rules_top10.png`
+- **Salida**: Archivo `results/recommendations.txt` con ejemplos de recomendaciones
+
+#### C. Incorporación de Nuevos Datos
+
+- **Sistema**: Pipeline automatizado en Apache Airflow
+- **Proceso**: Al agregar nuevos archivos CSV en `Transactions/`, el DAG re-ejecuta todos los análisis automáticamente
+- **Reproducibilidad**: Cada ejecución genera un set completo de resultados actualizados
+- **Limpieza**: Archivos intermedios se limpian automáticamente tras cada ejecución
+
+## Arquitectura de la Solución
+
+La solución utiliza Apache Airflow 2.8.1 con las siguientes características técnicas:
+
+- Prevención de zombie jobs con detección automática
+- Gestión eficiente de recursos (CPU, memoria, disco)
+- Uso de archivos intermedios en lugar de XCom para datasets grandes
+- Límites de recursos en todos los contenedores Docker
+- Timeouts y reintentos con exponential backoff
+- Pools para control de concurrencia
+- Liberación automática de memoria
+- Callbacks para monitoreo y alertas
+
+Para detalles completos, consulta: [OPTIMIZATION_GUIDE.md](./misc/OPTIMIZATION_GUIDE.md)
 
 ## Estructura del proyecto
 
@@ -67,6 +130,8 @@ Ejecuta:
 docker compose up -d
 ```
 
+Espera 2-3 minutos para que todos los servicios estén completamente iniciados.
+
 ### 3. Acceder a la interfaz web
 
 Abre tu navegador en [http://localhost:8080](http://localhost:8080)
@@ -83,7 +148,8 @@ Contraseña: airflow
 1. En la interfaz de Airflow, busca el DAG llamado `dataset_analysis_dag`.
 2. Actívalo con el switch.
 3. Pulsa "Trigger DAG" para ejecutarlo manualmente.
-4. Monitorea la ejecución y los logs desde la UI.
+4. **La primera tarea `setup_pools` configurará automáticamente los pools necesarios**.
+5. Monitorea la ejecución y los logs desde la UI.
 
 ### 5. Verificar la salida
 
@@ -555,38 +621,38 @@ El pipeline genera automáticamente las siguientes visualizaciones en formato PN
 
 ---
 
-## Resumen de hallazgos clave
+## Principales Hallazgos
 
-### 📊 Volumen de datos
+### Volumen de datos
 
-- **1,108,987 transacciones** analizadas
-- **131,186 clientes únicos**
-- **112,011 productos** en 50 categorías
-- **4 tiendas** en operación
+- 1,108,987 transacciones analizadas
+- 131,186 clientes únicos
+- 112,011 productos en 50 categorías
+- 4 tiendas en operación
 
-### 🛒 Comportamiento de compra
+### Comportamiento de compra
 
-- Ticket promedio: **9.55 productos** por transacción
-- El **8.09%** de las transacciones son compras grandes (>25 productos)
-- Los clientes recurrentes regresan cada **7 días** (mediana)
+- Ticket promedio: 9.55 productos por transacción
+- 8.09% de las transacciones son compras grandes (más de 25 productos)
+- Clientes recurrentes regresan cada 7 días (mediana)
 
-### 📅 Patrones temporales
+### Patrones temporales
 
-- **Fines de semana** son los días más activos (domingo lidera con 191,406 transacciones)
-- **Miércoles** es el día más tranquilo (137,245 transacciones)
+- Fines de semana son los días más activos (domingo: 191,406 transacciones)
+- Miércoles es el día más tranquilo (137,245 transacciones)
 - Alta variabilidad diaria (±1,053 transacciones de desviación estándar)
 
-### 👥 Segmentación
+### Segmentación de clientes
 
-- **20.6%** son clientes de alto valor (High Value)
-- **69.7%** son clientes regulares con potencial de crecimiento
-- **10.7%** tienen un patrón especializado (Frequent o Big Spender)
+- 20.6% son clientes de alto valor (High Value)
+- 69.7% son clientes regulares con potencial de crecimiento
+- 10.7% tienen un patrón especializado (Frequent o Big Spender)
 
-### 🔗 Asociaciones de productos
+### Asociaciones de productos
 
-- Se identificaron **múltiples reglas de asociación** con lift >10
-- La regla más fuerte (98→51) tiene un **lift de 12.57**
-- Estas asociaciones pueden impulsar estrategias de cross-selling
+- Se identificaron múltiples reglas de asociación con lift mayor a 10
+- La regla más fuerte (98→51) tiene un lift de 12.57
+- Estas asociaciones permiten estrategias de cross-selling efectivas
 
 ---
 
@@ -607,6 +673,36 @@ En el DAG se pueden ajustar los siguientes parámetros:
 
 - Método IQR con factor 1.5 (configurable en la función `descriptive_stats`)
 
+### Clustering K-Means
+
+- **Número de clusters**: 4
+- **Iteraciones máximas**: 300
+- **Métricas calculadas**: Frecuencia, volumen total, promedio productos/transacción, productos distintos, diversidad de categorías, días activo, compras por día
+- **Normalización**: StandardScaler (media=0, desviación=1)
+
+### Sistema de recomendación
+
+El proyecto implementa dos tipos de recomendaciones:
+
+1. **Por cliente**: Basado en historial de compra y reglas de asociación
+2. **Por producto**: "Los clientes que compraron X también compraron Y"
+
+## Estructura técnica del DAG
+
+### Dependencias
+
+```
+setup_pools → load_data → [data_review, descriptive_stats]
+                        ↓
+          [temporal_analysis, product_association, recommendation_system]
+                        ↓
+                customer_analysis
+                        ↓
+                 generate_plots
+                        ↓
+                  save_results
+```
+
 ## Limpieza y mantenimiento
 
 Para detener los contenedores:
@@ -620,3 +716,43 @@ Para limpiar volúmenes:
 ```bash
 docker compose down --volumes --remove-orphans
 ```
+
+Para limpiar archivos intermedios manualmente:
+
+```bash
+rm -rf ./data/intermediate/*
+```
+
+---
+
+## Tecnologías utilizadas
+
+- **Apache Airflow 2.8.1**: Orquestación de workflows
+- **Python 3.8+**: Lenguaje principal
+- **PostgreSQL 15**: Metadata store
+- **Redis**: Message broker
+- **Docker & Docker Compose**: Containerización
+- **Pandas**: Manipulación de datos
+- **Scikit-learn**: K-Means clustering
+- **Matplotlib/Seaborn**: Visualizaciones
+
+### Algoritmos
+
+- **K-Means**: Segmentación de clientes
+- **Apriori**: Reglas de asociación de productos
+- **IQR**: Detección de outliers
+
+---
+
+## Documentación adicional
+
+- `GUIA_TEORICA_COMPLETA.md`: Teoría completa para sustentación
+- `OPTIMIZATION_GUIDE.md`: Detalles de optimizaciones
+- `IMPLEMENTATION_REPORT.md`: Reporte técnico de implementación
+
+---
+
+## Autores
+
+- Juan Manuel Marín Angarita (A00382037)
+- Cristian Eduardo Botina Carpio (A00395008)
