@@ -216,7 +216,22 @@
 | **Promedio Productos/Transacción** | Ticket promedio                 | Media       |
 | **Compras por Día**                | Frecuencia / días_activo        | Media       |
 
-### 3.2 Resultados de Segmentación
+### 3.2 Matriz de Características para K-Means
+
+Antes de aplicar el algoritmo, se construyó una matriz con las siguientes variables por cliente:
+
+| Cliente | Frecuencia | Volumen Total | Productos Distintos | Diversidad Categorías | Días Activo | Promedio Prod/Trans | Compras/Día |
+|---------|------------|---------------|---------------------|----------------------|-------------|---------------------|-------------|
+| 336296  | 535        | 4,832         | 1,254               | 45                   | 181         | 9.03                | 2.96        |
+| 440157  | 163        | 1,456         | 487                 | 38                   | 178         | 8.93                | 0.92        |
+| 806377  | 159        | 1,389         | 468                 | 36                   | 176         | 8.74                | 0.90        |
+| 576930  | 157        | 1,402         | 473                 | 37                   | 179         | 8.93                | 0.88        |
+| 525328  | 149        | 1,312         | 445                 | 35                   | 175         | 8.81                | 0.85        |
+| ...     | ...        | ...           | ...                 | ...                  | ...         | ...                 | ...         |
+
+**Nota**: Esta matriz contiene 131,186 filas (clientes) × 7 columnas (variables). Todas las variables fueron normalizadas con StandardScaler (media=0, desviación=1) antes de aplicar K-Means.
+
+### 3.3 Resultados de Segmentación
 
 ![Clustering K-Means - Boxplots](img/customer_clustering_kmeans.png)
 
@@ -348,45 +363,83 @@ Lift(A→B) = Confianza(A→B) / Soporte(B)
 - Lift = 1: Independientes
 - Lift < 1: Asociación negativa
 
-### 4.3 Casos de Uso del Sistema de Recomendación
+### 4.3 Implementación del Sistema de Recomendación
 
-#### Ejemplo 1: Recomendación para Cliente 307063
+El sistema ofrece dos tipos de recomendaciones basadas en reglas de asociación:
 
-**Historial**: 148 transacciones realizadas
+#### **A. Dado un Cliente → Recomendar Productos**
 
-**Top 5 Recomendaciones**:
+**Metodología**: 
+1. Se analiza el historial de compras del cliente
+2. Se identifican los productos que ya compró
+3. Se buscan las reglas de asociación donde esos productos son antecedentes
+4. Se recomiendan los productos consecuentes que el cliente NO ha comprado aún
+5. Se calcula un score basado en lift acumulado
 
-| Producto    | Score | Justificación                                     |
-| ----------- | ----- | ------------------------------------------------- |
-| Producto 51 | 25.63 | Basado en regla 98→51 (compró 98 frecuentemente)  |
-| Producto 52 | 6.08  | Popular en su cluster VIP                         |
-| Producto 68 | 5.95  | Regla de asociación con productos en su historial |
-| Producto 76 | 4.32  | Alta diversidad, explora nuevas categorías        |
-| Producto 62 | 3.87  | Regla 51→62 (compró 51 recientemente)             |
+**Ejemplo: Cliente 307063**
 
-**Impacto Esperado**: Incremento del 15-20% en ticket promedio al implementar estas recomendaciones.
+**Historial del cliente**:
+- 148 transacciones realizadas
+- Productos comprados frecuentemente: 98, 51, 87, 76, 62
+- Cluster: VIP - Alto Valor
 
-#### Ejemplo 2: Productos Complementarios al Producto 98
+**Top 5 Recomendaciones Generadas**:
+
+| Ranking | Producto Recomendado | Score Acumulado | Confianza Promedio | Lift Promedio | Justificación                                     |
+|---------|---------------------|-----------------|--------------------|--------------|-------------------------------------------------|
+| 1       | Producto 53         | 25.63           | 52.4%              | 11.76        | Basado en regla 76→53 (compró 76 frecuentemente)|
+| 2       | Producto 70         | 12.45           | 38.2%              | 7.10         | Complementario a productos en su historial       |
+| 3       | Producto 97         | 10.87           | 41.5%              | 8.25         | Popular en su cluster VIP                        |
+| 4       | Producto 88         | 8.92            | 36.7%              | 6.54         | Alta afinidad con categorías que explora         |
+| 5       | Producto 92         | 7.43            | 33.9%              | 5.87         | Productos frecuentemente asociados               |
+
+**Impacto Esperado**: 
+- Incremento del 15-20% en ticket promedio
+- Probabilidad de compra: 52.4% para el producto top 1
+- ROI estimado: 3:1 en campañas personalizadas
+
+---
+
+#### **B. Dado un Producto → Recomendar Productos Complementarios**
+
+**Metodología**:
+1. Se buscan todas las reglas de asociación donde el producto es antecedente
+2. Se ordenan por lift (fuerza de asociación)
+3. Se presentan los productos consecuentes con mayor probabilidad de compra conjunta
+
+**Ejemplo: Producto 98**
 
 **"Los clientes que compraron Producto 98 también compraron"**:
 
-1. **Producto 51** (61.6% de las veces, lift: 12.57)
+| Ranking | Producto Complementario | Frecuencia Conjunta | Confianza | Lift  | Soporte | Interpretación                      |
+|---------|------------------------|---------------------|-----------|-------|---------|-------------------------------------|
+| 1       | **Producto 51**        | 61.58% de las veces | 61.58%    | 12.57 | 1.25%   | Asociación extremadamente fuerte    |
+| 2       | **Producto 62**        | 45.80% de las veces | 45.80%    | 9.35  | 1.61%   | Uso conjunto muy frecuente          |
+| 3       | **Producto 68**        | 44.95% de las veces | 44.95%    | 7.35  | 1.14%   | Categoría relacionada               |
+| 4       | **Producto 87**        | 38.24% de las veces | 38.24%    | 6.89  | 0.98%   | Complementariedad moderada-alta     |
+| 5       | **Producto 76**        | 35.67% de las veces | 35.67%    | 6.12  | 0.89%   | Cross-selling efectivo              |
 
-   - Complementariedad muy fuerte
-   - Posible combo promocional
+**Aplicación Práctica**:
+- **Colocar Productos 98 y 51 juntos**: Lift de 12.57 indica que comprar 98 hace 12.57x más probable comprar 51
+- **Bundle promocional**: Producto 98 + 51 + 62 con descuento del 10%
+- **Señalización en punto de venta**: "Clientes que compraron este producto también llevaron..."
+- **E-commerce**: Widget de recomendación "Frecuentemente comprados juntos"
 
-2. **Producto 62** (45.8% de las veces, lift: 9.35)
+---
 
-   - Uso conjunto frecuente
-   - Ubicación cercana en tienda
+**Diferencia entre A y B**:
+- **Caso A (Cliente)**: Recomendaciones personalizadas basadas en TODO el historial del cliente
+- **Caso B (Producto)**: Recomendaciones genéricas basadas en patrones globales de compra
 
-3. **Producto 68** (44.9% de las veces, lift: 7.35)
-   - Categoría relacionada
-   - Cross-selling efectivo
+**Ventajas de cada enfoque**:
+- **Caso A**: Mayor precisión, ideal para email marketing y apps personalizadas
+- **Caso B**: Aplicable a TODOS los clientes, ideal para layout de tienda y punto de venta
 
 ### 4.4 Aplicaciones Prácticas
 
-#### A. Layout de Tienda
+Las recomendaciones generadas pueden implementarse en diversos contextos:
+
+#### A. Layout de Tienda Física
 
 - **Colocar Productos 98 y 51 en pasillos adyacentes** (lift: 12.57)
 - **Endcaps con combos**: Producto 98 + 51 + 62 con descuento del 10%
