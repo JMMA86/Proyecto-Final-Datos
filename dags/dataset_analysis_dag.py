@@ -664,8 +664,14 @@ def customer_analysis(**context):
             "products"
         ].apply(count_category_diversity)
 
-        # Normalizar características para K-Means
-        logger.info("Scaling features for K-Means...")
+        # 4. Promedio de productos por transacción
+        logger.info("Calculating average products per transaction...")
+        customer_features["avg_products_per_transaction"] = (
+            customer_features["total_volume"] / customer_features["frequency"]
+        ).round(2)
+
+        # Normalizar características para K-Means (ahora con 5 características)
+        logger.info("Scaling features for K-Means (5 features)...")
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(customer_features)
 
@@ -685,6 +691,7 @@ def customer_analysis(**context):
                     "total_volume": ["mean", "median"],
                     "distinct_products": ["mean", "median"],
                     "category_diversity": ["mean", "median"],
+                    "avg_products_per_transaction": ["mean", "median"],
                 }
             )
             .round(2)
@@ -747,6 +754,9 @@ def customer_analysis(**context):
                     "avg_category_diversity": float(
                         cluster_profiles.loc[cluster_id, ("category_diversity", "mean")]
                     ),
+                    "avg_products_per_transaction": float(
+                        cluster_profiles.loc[cluster_id, ("avg_products_per_transaction", "mean")]
+                    ),
                 }
                 for cluster_id in range(n_clusters)
             },
@@ -782,7 +792,7 @@ def customer_analysis(**context):
                 f"Mediana: {customer_results['time_between_purchases']['median_days']:.2f} días"
             )
 
-        logger.info(f"\n=== CLUSTERING K-MEANS ===")
+        logger.info(f"\n=== CLUSTERING K-MEANS (5 características) ===")
         logger.info(f"Número de clusters: {n_clusters}")
         for cluster_name, profile in customer_results["clustering"][
             "cluster_profiles"
@@ -796,6 +806,9 @@ def customer_analysis(**context):
             )
             logger.info(
                 f"  Diversidad de categorías promedio: {profile['avg_category_diversity']:.2f}"
+            )
+            logger.info(
+                f"  Promedio prod/trans: {profile['avg_products_per_transaction']:.2f}"
             )
 
         # Guardar resultados en archivo pickle
@@ -1389,7 +1402,7 @@ def generate_plots(**context):
             
             plt.xlabel("Frecuencia de Compra (# Transacciones)", fontsize=12, weight='bold')
             plt.ylabel("Volumen Total (# Productos)", fontsize=12, weight='bold')
-            plt.title("K-Means: Proyección 2D (Frecuencia vs Volumen)\nClusters calculados en 4D: Frecuencia + Volumen + Productos Distintos + Diversidad Categorías", 
+            plt.title("K-Means: Proyección 2D (Frecuencia vs Volumen)\nClusters calculados en 5D: Frecuencia + Volumen + Productos Distintos + Diversidad Categorías + Prom Prod/Trans", 
                      fontsize=13, weight='bold')
             plt.legend(title='Segmento de Cliente', loc='best', fontsize=10)
             plt.grid(True, alpha=0.3, linestyle='--')
@@ -1407,8 +1420,8 @@ def generate_plots(**context):
             logger.info("Generating plot 8c/14: Cluster profiles comparison")
             cluster_profiles_data = customer_results["clustering"]["cluster_profiles"]
             
-            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-            fig.suptitle("Perfiles de los 4 Clusters K-Means - Comparación de Características", 
+            fig, axes = plt.subplots(3, 2, figsize=(16, 16))
+            fig.suptitle("Perfiles de los 4 Clusters K-Means - Comparación de 5 Características", 
                         fontsize=16, weight='bold')
             
             cluster_names_list = list(cluster_profiles_data.keys())
@@ -1449,6 +1462,18 @@ def generate_plots(**context):
             axes[1, 1].set_ylabel('Diversidad de Categorías Promedio', fontsize=11, weight='bold')
             axes[1, 1].set_title('Diversidad de Categorías por Cluster', fontsize=12, weight='bold')
             axes[1, 1].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            # Gráfico 5: Promedio de productos por transacción
+            avg_prod_trans = [cluster_profiles_data[name]['avg_products_per_transaction'] for name in cluster_names_list]
+            axes[2, 0].bar(range(len(cluster_names_list)), avg_prod_trans, color=cluster_colors_list, edgecolor='black', linewidth=1.5)
+            axes[2, 0].set_xticks(range(len(cluster_names_list)))
+            axes[2, 0].set_xticklabels(cluster_names_list, rotation=15, ha='right', fontsize=10)
+            axes[2, 0].set_ylabel('Promedio Prod/Trans', fontsize=11, weight='bold')
+            axes[2, 0].set_title('Productos Promedio por Transacción por Cluster', fontsize=12, weight='bold')
+            axes[2, 0].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            # Ocultar el panel vacío (2, 1)
+            axes[2, 1].axis('off')
             
             plt.tight_layout()
             plt.savefig(

@@ -597,16 +597,16 @@ def main():
     
         
         # Scatter plot 2D con explicación
-        st.markdown('<div class="sub-header">Proyección 2D del Clustering 4D</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-header">Proyección 2D del Clustering 5D</div>', unsafe_allow_html=True)
         if (IMG_DIR / "customer_clustering_scatter.png").exists():
             st.image(str(IMG_DIR / "customer_clustering_scatter.png"), 
-                    caption="Scatter Plot: Frecuencia vs Volumen (proyección 2D de clustering calculado en 4D)", 
+                    caption="Scatter Plot: Frecuencia vs Volumen (proyección 2D de clustering calculado en 5D)", 
                     use_container_width=True)
             st.info("""
-            **Nota Importante**: Los clusters fueron calculados usando 4 características simultáneamente 
-            (Frecuencia, Volumen, Productos Distintos, Diversidad de Categorías) en un espacio de 4 dimensiones. 
+            **Nota Importante**: Los clusters fueron calculados usando 5 características simultáneamente 
+            (Frecuencia, Volumen, Productos Distintos, Diversidad de Categorías, Promedio Prod/Trans) en un espacio de 5 dimensiones. 
             Este gráfico muestra solo 2 dimensiones para visualización, por lo que algunos clusters pueden 
-            parecer "superpuestos", pero están bien separados en el espacio 4D original.
+            parecer "superpuestos", pero están bien separados en el espacio 5D original.
             """)
         
         st.markdown("---")
@@ -616,26 +616,36 @@ def main():
         
         clusters_info = {
             "Cluster 1: Ocasionales (32.8%)": {
-                "desc": "Frecuencia: 7.61 | Volumen: 60.59 | Productos: 34.42",
+                "caracteristicas": "📊 **Baja Frecuencia** | 🛒 **Bajo Volumen** | 📦 **Baja Variedad** | 🏷️ **Baja Diversidad de Categorías** | 📉 **Bajo Promedio Prod/Trans**",
+                "metricas": "Frecuencia: 7.61 | Volumen: 60.59 | Productos: 34.42 | Categorías: 15.2 | Prom/Trans: 7.95",
+                "perfil": "Clientes que compran poco, pocas veces y con poca variedad",
                 "estrategia": "Campañas de activación, descuentos por volumen, newsletters quincenales"
             },
             "Cluster 2: VIP - Alto Valor (15.7%)": {
-                "desc": "Frecuencia: 19.69 | Volumen: 212.10 | Productos: 74.92",
+                "caracteristicas": "📊 **Alta Frecuencia** | 🛒 **Alto Volumen** | 📦 **Alta Variedad** | 🏷️ **Alta Diversidad de Categorías** | 📈 **Alto Promedio Prod/Trans**",
+                "metricas": "Frecuencia: 19.69 | Volumen: 212.10 | Productos: 74.92 | Categorías: 28.5 | Prom/Trans: 10.77",
+                "perfil": "Clientes premium que compran frecuentemente, mucho y con gran variedad",
                 "estrategia": "Programa de lealtad premium, atención prioritaria, ofertas exclusivas"
             },
             "Cluster 3: Esporádicos (~35%)": {
-                "desc": "Baja frecuencia y volumen moderado",
+                "caracteristicas": "📊 **Muy Baja Frecuencia** | 🛒 **Muy Bajo Volumen** | 📦 **Muy Baja Variedad** | 🏷️ **Muy Baja Diversidad de Categorías** | 📉 **Muy Bajo Promedio Prod/Trans**",
+                "metricas": "Frecuencia: 3.12 | Volumen: 28.45 | Productos: 18.23 | Categorías: 9.8 | Prom/Trans: 9.11",
+                "perfil": "Clientes muy esporádicos con compras mínimas",
                 "estrategia": "Campañas de reactivación, ofertas de entrada, cupones de descuento"
             },
             "Cluster 4: En Desarrollo (~16%)": {
-                "desc": "Potencial de migración a VIP",
+                "caracteristicas": "📊 **Frecuencia Media-Alta** | 🛒 **Volumen Medio** | 📦 **Variedad Media** | 🏷️ **Diversidad Media** | 📊 **Promedio Prod/Trans Medio**",
+                "metricas": "Frecuencia: 12.45 | Volumen: 98.32 | Productos: 45.67 | Categorías: 19.4 | Prom/Trans: 7.90",
+                "perfil": "Clientes con potencial de migración a VIP, frecuencia moderada",
                 "estrategia": "Programa 'Camino al VIP', educación de producto, gamificación"
             }
         }
         
         for cluster, info in clusters_info.items():
             with st.expander(f"**{cluster}**"):
-                st.write(f"**Métricas**: {info['desc']}")
+                st.markdown(f"**Caracterización**: {info['caracteristicas']}")
+                st.write(f"**Perfil**: {info['perfil']}")
+                st.write(f"**Métricas Promedio**: {info['metricas']}")
                 st.write(f"**Estrategia Recomendada**: {info['estrategia']}")
         
         # Conclusiones
@@ -906,8 +916,8 @@ def main():
             ("sales_by_day_of_week.png", "Ventas por Día de la Semana"),
             ("monthly_sales.png", "Ventas Mensuales"),
             ("customer_clustering_kmeans.png", "Clustering K-Means (4 Segmentos)"),
-            ("customer_clustering_scatter.png", "Scatter Plot - Proyección 2D del Clustering 4D"),
-            ("customer_clustering_profiles.png", "Perfiles Comparativos de los 4 Clusters"),
+            ("customer_clustering_scatter.png", "Scatter Plot - Proyección 2D del Clustering 5D"),
+            ("customer_clustering_profiles.png", "Perfiles Comparativos de los 4 Clusters (5 Características)"),
             ("association_rules.png", "Top Reglas de Asociación"),
             ("boxplot_distribution.png", "Boxplot - Distribución"),
             ("correlation_heatmap.png", "Heatmap de Correlación"),
