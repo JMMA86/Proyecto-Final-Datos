@@ -1163,7 +1163,7 @@ def generate_plots(**context):
 
         os.makedirs(RESULTS_DIR, exist_ok=True)
 
-        logger.info("Starting plot generation (14 plots total)")
+        logger.info("Starting plot generation (15 plots total)")
 
         # Gráficas originales
 
@@ -1331,51 +1331,132 @@ def generate_plots(**context):
             cluster_sizes_df = pd.Series(
                 customer_results["clustering"]["cluster_sizes"]
             )
-            plt.figure(figsize=(10, 6))
-            colors = ["#ff9999", "#66b3ff", "#99ff99", "#ffcc99"]
-            plt.pie(
+            plt.figure(figsize=(12, 8))
+            # Colores más contrastantes para distinguir mejor los 4 clusters
+            colors = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12"]
+            wedges, texts, autotexts = plt.pie(
                 cluster_sizes_df.values,
                 labels=cluster_sizes_df.index,
                 autopct="%1.1f%%",
                 colors=colors,
                 startangle=90,
+                textprops={'fontsize': 11, 'weight': 'bold'},
+                explode=[0.05] * len(cluster_sizes_df),  # Separar ligeramente las porciones
             )
-            plt.title("Clustering K-Means de Clientes")
+            # Hacer más legibles los porcentajes
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontsize(12)
+                autotext.set_weight('bold')
+            plt.title("Clustering K-Means de Clientes (4 Segmentos)", fontsize=14, weight='bold')
             plt.tight_layout()
             plt.savefig(
                 os.path.join(RESULTS_DIR, "customer_clustering_kmeans.png"),
-                dpi=100,
+                dpi=150,
                 bbox_inches="tight",
             )
             plt.close("all")
             gc.collect()
 
-            # Visualización 3D del clustering (proyección 2D)
+            # Visualización 2D del clustering (proyección desde 4D)
             logger.info("Generating plot 8b/14: Customer clustering scatter")
             customer_clusters_df = pd.read_pickle(clusters_file)
-            plt.figure(figsize=(12, 8))
+            plt.figure(figsize=(14, 9))
 
             # Scatter plot de frecuencia vs volumen total coloreado por cluster
-            scatter = plt.scatter(
-                customer_clusters_df["frequency"],
-                customer_clusters_df["total_volume"],
-                c=customer_clusters_df["cluster"],
-                cmap="viridis",
-                alpha=0.6,
-                s=100,
-            )
-            plt.xlabel("Frecuencia de Compra")
-            plt.ylabel("Volumen Total")
-            plt.title("Clustering K-Means: Frecuencia vs Volumen")
-            plt.colorbar(scatter, label="Cluster")
+            # Nota: Los clusters fueron calculados en 4D (frecuencia, volumen, productos distintos, categorías)
+            # Esta es solo una proyección 2D para visualización
+            cluster_colors = {0: '#e74c3c', 1: '#3498db', 2: '#2ecc71', 3: '#f39c12'}
+            cluster_names_map = {
+                0: customer_clusters_df[customer_clusters_df['cluster']==0]['cluster_name'].iloc[0] if len(customer_clusters_df[customer_clusters_df['cluster']==0]) > 0 else 'Cluster 0',
+                1: customer_clusters_df[customer_clusters_df['cluster']==1]['cluster_name'].iloc[0] if len(customer_clusters_df[customer_clusters_df['cluster']==1]) > 0 else 'Cluster 1',
+                2: customer_clusters_df[customer_clusters_df['cluster']==2]['cluster_name'].iloc[0] if len(customer_clusters_df[customer_clusters_df['cluster']==2]) > 0 else 'Cluster 2',
+                3: customer_clusters_df[customer_clusters_df['cluster']==3]['cluster_name'].iloc[0] if len(customer_clusters_df[customer_clusters_df['cluster']==3]) > 0 else 'Cluster 3',
+            }
+            
+            for cluster_id in sorted(customer_clusters_df['cluster'].unique()):
+                cluster_data = customer_clusters_df[customer_clusters_df['cluster'] == cluster_id]
+                plt.scatter(
+                    cluster_data['frequency'],
+                    cluster_data['total_volume'],
+                    c=cluster_colors[cluster_id],
+                    label=cluster_names_map[cluster_id],
+                    alpha=0.6,
+                    s=100,
+                    edgecolors='black',
+                    linewidths=0.5
+                )
+            
+            plt.xlabel("Frecuencia de Compra (# Transacciones)", fontsize=12, weight='bold')
+            plt.ylabel("Volumen Total (# Productos)", fontsize=12, weight='bold')
+            plt.title("K-Means: Proyección 2D (Frecuencia vs Volumen)\nClusters calculados en 4D: Frecuencia + Volumen + Productos Distintos + Diversidad Categorías", 
+                     fontsize=13, weight='bold')
+            plt.legend(title='Segmento de Cliente', loc='best', fontsize=10)
+            plt.grid(True, alpha=0.3, linestyle='--')
             plt.tight_layout()
             plt.savefig(
                 os.path.join(RESULTS_DIR, "customer_clustering_scatter.png"),
-                dpi=100,
+                dpi=150,
                 bbox_inches="tight",
             )
             plt.close("all")
             del customer_clusters_df
+            gc.collect()
+
+            # Visualización adicional: Gráfico de barras comparativo de características por cluster
+            logger.info("Generating plot 8c/14: Cluster profiles comparison")
+            cluster_profiles_data = customer_results["clustering"]["cluster_profiles"]
+            
+            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig.suptitle("Perfiles de los 4 Clusters K-Means - Comparación de Características", 
+                        fontsize=16, weight='bold')
+            
+            cluster_names_list = list(cluster_profiles_data.keys())
+            cluster_colors_list = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12']
+            
+            # Gráfico 1: Frecuencia promedio
+            frequencies = [cluster_profiles_data[name]['avg_frequency'] for name in cluster_names_list]
+            axes[0, 0].bar(range(len(cluster_names_list)), frequencies, color=cluster_colors_list, edgecolor='black', linewidth=1.5)
+            axes[0, 0].set_xticks(range(len(cluster_names_list)))
+            axes[0, 0].set_xticklabels(cluster_names_list, rotation=15, ha='right', fontsize=10)
+            axes[0, 0].set_ylabel('Frecuencia Promedio', fontsize=11, weight='bold')
+            axes[0, 0].set_title('Frecuencia de Compra por Cluster', fontsize=12, weight='bold')
+            axes[0, 0].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            # Gráfico 2: Volumen total promedio
+            volumes = [cluster_profiles_data[name]['avg_total_volume'] for name in cluster_names_list]
+            axes[0, 1].bar(range(len(cluster_names_list)), volumes, color=cluster_colors_list, edgecolor='black', linewidth=1.5)
+            axes[0, 1].set_xticks(range(len(cluster_names_list)))
+            axes[0, 1].set_xticklabels(cluster_names_list, rotation=15, ha='right', fontsize=10)
+            axes[0, 1].set_ylabel('Volumen Total Promedio', fontsize=11, weight='bold')
+            axes[0, 1].set_title('Volumen de Compra por Cluster', fontsize=12, weight='bold')
+            axes[0, 1].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            # Gráfico 3: Productos distintos promedio
+            distinct_prods = [cluster_profiles_data[name]['avg_distinct_products'] for name in cluster_names_list]
+            axes[1, 0].bar(range(len(cluster_names_list)), distinct_prods, color=cluster_colors_list, edgecolor='black', linewidth=1.5)
+            axes[1, 0].set_xticks(range(len(cluster_names_list)))
+            axes[1, 0].set_xticklabels(cluster_names_list, rotation=15, ha='right', fontsize=10)
+            axes[1, 0].set_ylabel('Productos Distintos Promedio', fontsize=11, weight='bold')
+            axes[1, 0].set_title('Variedad de Productos por Cluster', fontsize=12, weight='bold')
+            axes[1, 0].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            # Gráfico 4: Diversidad de categorías promedio
+            category_div = [cluster_profiles_data[name]['avg_category_diversity'] for name in cluster_names_list]
+            axes[1, 1].bar(range(len(cluster_names_list)), category_div, color=cluster_colors_list, edgecolor='black', linewidth=1.5)
+            axes[1, 1].set_xticks(range(len(cluster_names_list)))
+            axes[1, 1].set_xticklabels(cluster_names_list, rotation=15, ha='right', fontsize=10)
+            axes[1, 1].set_ylabel('Diversidad de Categorías Promedio', fontsize=11, weight='bold')
+            axes[1, 1].set_title('Diversidad de Categorías por Cluster', fontsize=12, weight='bold')
+            axes[1, 1].grid(axis='y', alpha=0.3, linestyle='--')
+            
+            plt.tight_layout()
+            plt.savefig(
+                os.path.join(RESULTS_DIR, "customer_clustering_profiles.png"),
+                dpi=150,
+                bbox_inches="tight",
+            )
+            plt.close("all")
             gc.collect()
 
         # 9. Top reglas de asociación

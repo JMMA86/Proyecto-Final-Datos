@@ -564,7 +564,7 @@ def main():
         
         **1. Matriz de Entrada**
         
-        Se construyó una matriz de 131,186 clientes × 7 variables:
+        Se construyó una matriz de 131,186 clientes × 5 variables:
         
         | Variable | Descripción | Ejemplo |
         |----------|-------------|---------|
@@ -572,9 +572,7 @@ def main():
         | Volumen Total | Total de productos comprados | 4,832 unidades |
         | Productos Distintos | Variedad de productos | 1,254 productos únicos |
         | Diversidad Categorías | Número de categorías exploradas | 45 categorías |
-        | Días Activo | Días con al menos una compra | 181 días |
         | Promedio Prod/Trans | Productos promedio por compra | 9.03 productos |
-        | Compras/Día | Intensidad de compra | 2.96 compras/día |
         
         **2. Normalización**
         
@@ -594,15 +592,24 @@ def main():
         Se identificaron 4 segmentos de clientes con características distintivas:
         """)
         
-        # Mostrar imágenes
-        col1, col2 = st.columns(2)
-        with col1:
-            if (IMG_DIR / "customer_clustering_kmeans.png").exists():
-                st.image(str(IMG_DIR / "customer_clustering_kmeans.png"), caption="Distribución de Clusters", use_container_width=True)
+        # Mostrar imágenes - NUEVAS VISUALIZACIONES MEJORADAS
+        st.markdown("---")
+    
         
-        with col2:
-            if (IMG_DIR / "customer_clustering_scatter.png").exists():
-                st.image(str(IMG_DIR / "customer_clustering_scatter.png"), caption="Scatter: Frecuencia vs Volumen", use_container_width=True)
+        # Scatter plot 2D con explicación
+        st.markdown('<div class="sub-header">Proyección 2D del Clustering 4D</div>', unsafe_allow_html=True)
+        if (IMG_DIR / "customer_clustering_scatter.png").exists():
+            st.image(str(IMG_DIR / "customer_clustering_scatter.png"), 
+                    caption="Scatter Plot: Frecuencia vs Volumen (proyección 2D de clustering calculado en 4D)", 
+                    use_container_width=True)
+            st.info("""
+            **Nota Importante**: Los clusters fueron calculados usando 4 características simultáneamente 
+            (Frecuencia, Volumen, Productos Distintos, Diversidad de Categorías) en un espacio de 4 dimensiones. 
+            Este gráfico muestra solo 2 dimensiones para visualización, por lo que algunos clusters pueden 
+            parecer "superpuestos", pero están bien separados en el espacio 4D original.
+            """)
+        
+        st.markdown("---")
         
         # Descripción de clusters
         st.markdown('<div class="sub-header">Características de los Clusters</div>', unsafe_allow_html=True)
@@ -898,8 +905,9 @@ def main():
             ("daily_sales_timeseries.png", "Serie Temporal - Ventas Diarias"),
             ("sales_by_day_of_week.png", "Ventas por Día de la Semana"),
             ("monthly_sales.png", "Ventas Mensuales"),
-            ("customer_clustering_kmeans.png", "Clustering K-Means"),
-            ("customer_clustering_scatter.png", "Scatter Plot - Clustering"),
+            ("customer_clustering_kmeans.png", "Clustering K-Means (4 Segmentos)"),
+            ("customer_clustering_scatter.png", "Scatter Plot - Proyección 2D del Clustering 4D"),
+            ("customer_clustering_profiles.png", "Perfiles Comparativos de los 4 Clusters"),
             ("association_rules.png", "Top Reglas de Asociación"),
             ("boxplot_distribution.png", "Boxplot - Distribución"),
             ("correlation_heatmap.png", "Heatmap de Correlación"),
