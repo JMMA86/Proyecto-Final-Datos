@@ -312,7 +312,8 @@ def main():
             "Segmentación de Clientes",
             "Sistema de Recomendación",
             "Visualizaciones",
-            "Informe Completo"
+            "Informe Completo",
+            "Cargar Nuevos Datos"
         ]
     )
     
@@ -411,74 +412,139 @@ def main():
     # PÁGINA: ANÁLISIS DESCRIPTIVO
     # ==========================
     elif page == "Análisis Descriptivo":
-        st.markdown('<div class="main-header">Análisis Descriptivo</div>', unsafe_allow_html=True)
-        
-        # Serie temporal
-        st.markdown('<div class="sub-header">Análisis Temporal</div>', unsafe_allow_html=True)
-        
-        daily_sales = transactions_df.groupby(transactions_df["date"].dt.date).agg({
-            "customer": "count",
-            "num_products": "sum"
-        }).rename(columns={"customer": "Transacciones", "num_products": "Productos"})
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=daily_sales.index,
-            y=daily_sales["Transacciones"],
-            mode="lines",
-            name="Transacciones Diarias",
-            line=dict(color="blue", width=2)
-        ))
-        fig.update_layout(
-            title="Serie Temporal - Transacciones Diarias",
-            xaxis_title="Fecha",
-            yaxis_title="Número de Transacciones",
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Ventas por día de la semana
-        st.markdown('<div class="sub-header">Ventas por Día de la Semana</div>', unsafe_allow_html=True)
-        
-        transactions_df["day_name"] = transactions_df["date"].dt.day_name()
-        day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        day_sales = transactions_df.groupby("day_name").size().reindex(day_order)
-        
-        fig = px.bar(
-            x=day_sales.index,
-            y=day_sales.values,
-            labels={"x": "Día", "y": "Transacciones"},
-            title="Transacciones por Día de la Semana",
-            color=day_sales.values,
-            color_continuous_scale="Viridis"
-        )
-        fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('<div class="main-header">Análisis Descriptivo y Visualizaciones</div>', unsafe_allow_html=True)
+        st.markdown("""
+        Exploración detallada de patrones de compra, distribución de productos, comportamiento temporal,
+        y visualizaciones analíticas avanzadas para identificar tendencias y outliers.
+        """)
         
         # Distribución de productos por transacción
-        st.markdown('<div class="sub-header">Distribución de Productos por Transacción</div>', unsafe_allow_html=True)
-        
-        fig = px.histogram(
-            transactions_df,
-            x="num_products",
-            nbins=30,
-            title="Histograma: Número de Productos por Transacción",
-            labels={"num_products": "Número de Productos", "count": "Frecuencia"}
-        )
-        fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('<div class="sub-header">1. Distribución de Productos por Transacción</div>', unsafe_allow_html=True)
         
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.metric("Media", f"{transactions_df['num_products'].mean():.2f}")
+            st.metric("Media", f"{stats['promedio_productos']:.2f}")
         with col2:
-            st.metric("Mediana", f"{transactions_df['num_products'].median():.2f}")
+            st.metric("Mediana", f"{transactions_df['num_products'].median():.0f}")
         with col3:
-            st.metric("Desviación Estándar", f"{transactions_df['num_products'].std():.2f}")
+            st.metric("Desv. Estándar", f"{transactions_df['num_products'].std():.2f}")
         with col4:
-            st.metric("Mínimo", f"{transactions_df['num_products'].min()}")
+            st.metric("Mínimo", f"{transactions_df['num_products'].min():.0f}")
         with col5:
-            st.metric("Máximo", f"{transactions_df['num_products'].max()}")
+            st.metric("Máximo", f"{transactions_df['num_products'].max():.0f}")
+        
+        # Mostrar histograma existente
+        img_path = Path("docs/img/products_histogram.png")
+        if img_path.exists():
+            st.image(str(img_path), caption="Histograma: Distribución de Productos por Transacción", use_container_width=True)
+        
+        st.markdown("""
+        **Insight**: La mediana (6) es significativamente menor que la media (9.55), indicando que 
+        transacciones grandes elevan el promedio. El 8% de transacciones son compras al por mayor o eventos especiales.
+        """)
+        
+        # Top 10 fechas con más transacciones
+        st.markdown('<div class="sub-header">2. Top 10 Fechas con Más Transacciones</div>', unsafe_allow_html=True)
+        
+        top_dates = transactions_df.groupby(transactions_df["date"].dt.date).size().sort_values(ascending=False).head(10)
+        top_dates_df = pd.DataFrame({
+            "Fecha": top_dates.index.astype(str),
+            "Transacciones": top_dates.values
+        })
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig = px.bar(
+                top_dates_df,
+                x="Fecha",
+                y="Transacciones",
+                title="Top 10 Días con Más Transacciones",
+                template="plotly_dark"
+            )
+            fig.update_layout(height=400, xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.dataframe(top_dates_df, height=400)
+        
+        st.markdown("""
+        **Insight**: Los días pico superan el promedio en más del 37%, sugiriendo eventos promocionales 
+        o estacionalidad que deben ser capitalizados.
+        """)
+        
+        # Categorías más rentables - usar imagen existente
+        st.markdown('<div class="sub-header">3. Categorías Más Rentables por Volumen</div>', unsafe_allow_html=True)
+        
+        img_path = Path("docs/img/categories_by_volume.png")
+        if img_path.exists():
+            st.image(str(img_path), caption="Top 10 Categorías por Volumen de Ventas", use_container_width=True)
+            st.markdown("""
+            **Insight**: La Categoría 6 domina con más de 1.75 millones de unidades vendidas, representando una oportunidad 
+            significativa para optimización de inventario y estrategias de promoción.
+            """)
+        else:
+            st.warning("Imagen categories_by_volume.png no encontrada en docs/img/")
+        
+        # Serie de Tiempo - usar imagen existente
+        st.markdown('<div class="sub-header">4. Serie Temporal: Tendencias y Estacionalidad</div>', unsafe_allow_html=True)
+        
+        img_path_daily = Path("docs/img/daily_sales_timeseries.png")
+        if img_path_daily.exists():
+            st.image(str(img_path_daily), caption="Serie Temporal: Ventas Diarias (Enero - Junio 2013)", use_container_width=True)
+        
+        img_path_monthly = Path("docs/img/monthly_sales.png")
+        if img_path_monthly.exists():
+            st.image(str(img_path_monthly), caption="Evolución Mensual de Ventas", use_container_width=True)
+        
+        st.markdown("""
+        **Insights**:
+        - La variabilidad sugiere patrones estacionales moderados pero identificables
+        - Los picos en junio indican posibles promociones de mitad de año
+        - Se observa un crecimiento progresivo de enero a junio
+        """)
+        
+        # Boxplot - usar imagen existente
+        st.markdown('<div class="sub-header">5. Distribución y Detección de Outliers</div>', unsafe_allow_html=True)
+        
+        img_path_box = Path("docs/img/boxplot_distribution.png")
+        if img_path_box.exists():
+            st.image(str(img_path_box), caption="Boxplot: Distribución de Productos por Transacción", use_container_width=True)
+        
+        st.markdown("""
+        **Insights**:
+        - **Outliers superiores**: Clientes VIP con comportamiento excepcional (target para programas de lealtad)
+        - **Outliers inferiores**: Clientes inactivos o nuevos (target para campañas de activación)
+        - El 75% de los clientes compran menos de 12 productos por transacción
+        """)
+        
+        # Heatmap de Correlación - usar imagen existente
+        st.markdown('<div class="sub-header">6. Relaciones entre Variables (Heatmap de Correlación)</div>', unsafe_allow_html=True)
+        
+        img_path_heatmap = Path("docs/img/correlation_heatmap.png")
+        if img_path_heatmap.exists():
+            st.image(str(img_path_heatmap), caption="Matriz de Correlación: Variables de Comportamiento de Compra", use_container_width=True)
+        
+        st.markdown("""
+        **Interpretación de Correlaciones**:
+        - **Correlación alta positiva (> 0.7)**: Variables que crecen juntas (ej: Frecuencia ↔ Volumen Total)
+        - **Correlación moderada (0.3 - 0.7)**: Relación significativa pero no determinante
+        - **Correlación baja (< 0.3)**: Variables independientes
+        - **Correlación negativa**: Variables inversamente relacionadas
+        """)
+        
+        # Ventas por día de la semana - usar imagen existente
+        st.markdown('<div class="sub-header">7. Patrones Semanales de Compra</div>', unsafe_allow_html=True)
+        
+        img_path_weekly = Path("docs/img/sales_by_day_of_week.png")
+        if img_path_weekly.exists():
+            st.image(str(img_path_weekly), caption="Ventas por Día de la Semana", use_container_width=True)
+        
+        st.markdown("""
+        **Insight**: Los fines de semana concentran el 34.3% de las transacciones semanales. 
+        Miércoles es el día más bajo, representando una oportunidad para promociones específicas.
+        """)
+    
+
     
     # ==========================
     # PÁGINA: SEGMENTACIÓN
@@ -903,6 +969,168 @@ def main():
             )
         else:
             st.error("No se encontró el archivo INFORME_EJECUTIVO.md")
+    
+    # ==========================
+    # PÁGINA: CARGAR NUEVOS DATOS
+    # ==========================
+    elif page == "Cargar Nuevos Datos":
+        st.markdown('<div class="main-header">Incorporación de Nuevos Datos</div>', unsafe_allow_html=True)
+        
+        st.markdown("""
+        ### Sistema de Actualización Automática con Apache Airflow
+        
+        Este sistema permite incorporar nuevos datos de transacciones y regenerar automáticamente todos los análisis
+        mediante un pipeline ETL automatizado.
+        """)
+        
+        st.markdown("---")
+        
+        # Formato de archivos de transacciones
+        st.markdown('<div class="sub-header">Formatos de Archivos Soportados</div>', unsafe_allow_html=True)
+        
+        st.markdown("""
+        #### 1. Archivos de Transacciones (###_Tran.csv)
+        
+        **Ubicación**: `Transactions/` (ej: `102_Tran.csv`, `103_Tran.csv`, `107_Tran.csv`, `110_Tran.csv`)
+        
+        **Formato** (separador: `|`, sin encabezado):
+        ```
+        fecha|tienda|cliente|productos
+        2013-01-01|102|530|20 3 1
+        2013-01-01|102|587|6 29 43 21 34 2 10 32
+        2013-01-01|103|198|21 5 189 341 60 32 6 3 50
+        ```
+        
+        **Especificación de Columnas**:
+        - **fecha**: Fecha de la transacción en formato `YYYY-MM-DD`
+        - **tienda**: ID numérico de la tienda (102, 103, 107, 110)
+        - **cliente**: ID único del cliente (número entero)
+        - **productos**: Lista de IDs de productos separados por espacios
+        
+        **Validaciones**:
+        - Sin encabezado (la primera línea es datos)
+        - Separador obligatorio: `|` (pipe)
+        - Cada producto debe ser un número entero
+        - Una transacción puede tener de 1 a n productos
+        """)
+        
+        st.markdown("""
+        #### 2. Archivo de Categorías (Categories.csv)
+        
+        **Ubicación**: `Products/Categories.csv`
+        
+        **Formato** (separador: `,`, con encabezado):
+        ```
+        category_id,category_name
+        1,Bebidas
+        2,Lácteos
+        3,Panadería
+        ```
+        
+        **Especificación de Columnas**:
+        - **category_id**: ID único de la categoría (número entero)
+        - **category_name**: Nombre descriptivo de la categoría (texto)
+        """)
+        
+        st.markdown("""
+        #### 3. Archivo de Relación Producto-Categoría (ProductCategory.csv)
+        
+        **Ubicación**: `Products/ProductCategory.csv`
+        
+        **Formato** (separador: `,`, con encabezado):
+        ```
+        product_code,category_id
+        1,15
+        2,24
+        3,42
+        ```
+        
+        **Especificación de Columnas**:
+        - **product_code**: ID único del producto (número entero)
+        - **category_id**: ID de la categoría a la que pertenece (debe existir en Categories.csv)
+        """)
+        
+        st.markdown("---")
+        
+        # Pipeline Airflow
+        st.markdown("""
+        ### Pipeline ETL con Apache Airflow
+        
+        Para incorporar datos de forma automatizada y escalable:
+        
+        **1. Iniciar Airflow**
+        ```bash
+        docker-compose up -d
+        ```
+        
+        **2. Acceder a la interfaz web**
+        - URL: http://localhost:8080
+        - Usuario: `airflow`
+        - Contraseña: `airflow`
+        
+        **3. Activar el DAG `dataset_analysis_dag`**
+        
+        **4. Agregar nuevos archivos CSV**
+        - Coloca los archivos en la carpeta `Transactions/`
+        - El DAG detectará automáticamente los nuevos archivos
+        - Se ejecutará el pipeline completo: carga → limpieza → análisis → visualizaciones
+        
+        **5. Resultados**
+        - Las visualizaciones se guardan en `docs/img/`
+        - Los análisis se actualizan automáticamente
+        - Se regeneran las 15 imágenes del informe
+        
+        ### Arquitectura del Pipeline
+        """)
+        
+        st.code("""
+# DAG: dataset_analysis_dag
+# Tareas:
+1. load_data          → Carga CSVs de Transactions/
+2. clean_data         → Validación y limpieza
+3. analyze_products   → Top productos, categorías
+4. analyze_customers  → Top clientes, clustering
+5. analyze_temporal   → Series de tiempo, patrones
+6. clustering         → K-Means segmentación
+7. association_rules  → Apriori, recomendaciones
+8. generate_visualizations → 15 gráficos PNG
+        """, language="python")
+        
+        st.markdown("""
+        ### Ventajas del Pipeline Airflow
+        
+        ✅ **Automatización completa**: Los análisis se regeneran automáticamente  
+        ✅ **Escalabilidad**: Procesa millones de transacciones eficientemente  
+        ✅ **Monitoreo**: Interfaz web para ver el estado de cada tarea  
+        ✅ **Recuperación de errores**: Reintentos automáticos  
+        ✅ **Reproducibilidad**: Mismo análisis cada vez  
+        ✅ **Programación**: Ejecutar diario/semanal/mensual  
+        """)
+        
+        st.info("""
+        **Nota**: El pipeline Airflow ya está configurado en `docker-compose.yaml` y `dags/dataset_analysis_dag.py`.
+        Solo necesitas iniciar Docker Compose y agregar los archivos CSV.
+        """)
+        
+        # Verificación del sistema
+        st.markdown("---")
+        st.markdown('<div class="sub-header">Verificación del Sistema</div>', unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            transactions_files = list(TRANSACTIONS_DIR.glob("*.csv"))
+            st.metric("Archivos de Transacciones", len(transactions_files))
+        
+        with col2:
+            if transactions_df is not None:
+                st.metric("Total de Transacciones", f"{len(transactions_df):,}")
+            else:
+                st.metric("Total de Transacciones", "N/A")
+        
+        with col3:
+            images = list(IMG_DIR.glob("*.png")) if IMG_DIR.exists() else []
+            st.metric("Visualizaciones Generadas", len(images))
     
     # Footer
     st.markdown("---")
